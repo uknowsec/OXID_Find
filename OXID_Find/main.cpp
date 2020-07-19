@@ -71,15 +71,15 @@ const char buffer_v2[] = {/* Packet 433 */
 
 
 int oxid(const char* host) {
-	WSADATA wsd;//∂®“Â	WSADATA∂‘œÛ
-	if (WSAStartup(MAKEWORD(2, 2), &wsd) != 0) {//≥ı ºªØWSA
+	WSADATA wsd;//ÂÆö‰πâ	WSADATAÂØπË±°
+	if (WSAStartup(MAKEWORD(2, 2), &wsd) != 0) {//ÂàùÂßãÂåñWSA
 		WSACleanup();
 		return -1;
 	}
 
 	SOCKET clientSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (clientSocket == INVALID_SOCKET) {
-		cout << "[-] error:" << WSAGetLastError()  << endl;
+		//cout << "[-] error:" << WSAGetLastError()  << endl;
 		WSACleanup();
 		return -2;
 	}
@@ -92,14 +92,14 @@ int oxid(const char* host) {
 	int const SERVER_MSG_SIZE = 1024;
 	char recvdata1[SERVER_MSG_SIZE] = { 0 };
 	char recvdata2[SERVER_MSG_SIZE] = { 0 };
-	//¡¨Ω”∑˛ŒÒ∆˜ ß∞‹
+	//ËøûÊé•ÊúçÂä°Âô®Â§±Ë¥•
 	if (connect(clientSocket, (struct sockaddr*)&client, sizeof(client)) < 0) {
-		cout << "[-] error:" << WSAGetLastError() << " connect fail " << endl;
+		//cout << "[-] error:" << WSAGetLastError() << " connect fail " << endl;
 		closesocket(clientSocket);
 		WSACleanup();
 		return -3;
 	}
-	//¡¨Ω”∑˛ŒÒ∆˜≥…π¶
+	//ËøûÊé•ÊúçÂä°Âô®ÊàêÂäü
 	else {
 		cout << "\n[*] Retrieving network interfaces of " << host << endl;
 		send(clientSocket, buffer_v1, sizeof(buffer_v1), 0);
