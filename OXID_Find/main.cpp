@@ -1,15 +1,50 @@
-
 #include<WinSock2.h>
 #include <stdio.h>
 #include <cstdint>
 #include <stdlib.h>
 #include <iostream>
 #include <string>
+#include <thread>
+#include <vector>
+#include <Windows.h>
+#include <mutex>
 using namespace std;
+mutex mu;  //线程互斥对象
+CRITICAL_SECTION Critical;      //定义临界区句柄
 
 #pragma comment(lib,"ws2_32.lib")
 
 #define _IP_MARK "."
+int oxid(const char* host);
+int oxid1(uint32_t host);
+string INTtoIP(uint32_t num);
+int cidr_to_ip_and_mask(const char* cidr, uint32_t* ip, uint32_t* mask);
+/**
+ * Spawns n threads
+ */
+void spawnThreads(char* host)
+{
+	uint32_t ip;
+	uint32_t mask;
+	uint32_t first_ip;
+	std::vector<std::thread> threads;
+	InitializeCriticalSection(&Critical);   //初始化临界区对象
+	if (cidr_to_ip_and_mask(host, &ip, &mask) == -1) {
+		printf("error in cidr call.\n");
+		exit(1);
+	}
+	first_ip = ip & mask;
+	uint32_t final_ip = first_ip | ~mask;
+	uint32_t sum = final_ip - first_ip;
+	for (uint32_t i = first_ip; i <= final_ip; i++) {
+		threads.push_back(std::thread(oxid1, i));
+		//cout << INTtoIP(i) << endl;
+	}
+	for (auto& th : threads) {
+		th.join();
+	}
+}
+
 int cidr_to_ip_and_mask(const char* cidr, uint32_t* ip, uint32_t* mask)
 {
 	uint8_t a, b, c, d, bits;
@@ -69,7 +104,6 @@ const char buffer_v2[] = {/* Packet 433 */
 			0x18, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00 };
 
-
 int oxid(const char* host) {
 	WSADATA wsd;//定义	WSADATA对象
 	if (WSAStartup(MAKEWORD(2, 2), &wsd) != 0) {//初始化WSA
@@ -101,6 +135,7 @@ int oxid(const char* host) {
 	}
 	//连接服务器成功
 	else {
+
 		cout << "\n[*] Retrieving network interfaces of " << host << endl;
 		send(clientSocket, buffer_v1, sizeof(buffer_v1), 0);
 		int size1 = recv(clientSocket, recvdata1, SERVER_MSG_SIZE, 0);
@@ -113,18 +148,90 @@ int oxid(const char* host) {
 			{
 				printf("%c", a[i]);
 			}
-			if (a[i+1] == 9 && a[i+2] == 0 && a[i+3]==-1 && a[i + 4] == -1)
+			if (a[i + 1] == 9 && a[i + 2] == 0 && a[i + 3] == -1 && a[i + 4] == -1)
 			{
 				break;
 			}
-			if (a[i] == 0 && a[i + 1] == 0 && a[i + 2] == 0 && a[i+3] == 7)
+			if (a[i] == 0 && a[i + 1] == 0 && a[i + 2] == 0 && a[i + 3] == 7)
 			{
 				printf("\n  [>] IP Address: ");
 			}
 
-		}	
+		}
 		memset(recvdata1, 0, SERVER_MSG_SIZE);
 		memset(recvdata2, 0, SERVER_MSG_SIZE);
+	}
+
+	closesocket(clientSocket);
+	WSACleanup();
+
+	return 0;
+
+}
+
+int oxid1(uint32_t host) {
+	WSADATA wsd;//定义	WSADATA对象
+	if (WSAStartup(MAKEWORD(2, 2), &wsd) != 0) {//初始化WSA
+		WSACleanup();
+		return -1;
+	}
+
+	SOCKET clientSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (clientSocket == INVALID_SOCKET) {
+		//cout << "[-] error:" << WSAGetLastError()  << endl;
+		WSACleanup();
+		return -2;
+	}
+
+	SOCKADDR_IN client;
+	client.sin_family = AF_INET;
+	client.sin_port = htons(135);
+	client.sin_addr.S_un.S_addr = inet_addr(INTtoIP(host).c_str());
+
+	int const SERVER_MSG_SIZE = 1024;
+	char recvdata1[SERVER_MSG_SIZE] = { 0 };
+	char recvdata2[SERVER_MSG_SIZE] = { 0 };
+	//连接服务器失败
+	if (connect(clientSocket, (struct sockaddr*)&client, sizeof(client)) < 0) {
+		//cout << "[-] error:" << WSAGetLastError() << " connect fail " << endl;
+		closesocket(clientSocket);
+		WSACleanup();
+		return -3;
+	}
+	//连接服务器成功
+	else {
+		//mu.lock(); //同步数据锁
+		EnterCriticalSection(&Critical);
+
+		cout << "\n[*] Retrieving network interfaces of " << INTtoIP(host).c_str() << endl <<"  [>] Computer name : ";
+		send(clientSocket, buffer_v1, sizeof(buffer_v1), 0);
+		int size1 = recv(clientSocket, recvdata1, SERVER_MSG_SIZE, 0);
+		send(clientSocket, buffer_v2, sizeof(buffer_v2), 0);
+		int size2 = recv(clientSocket, recvdata2, 2048, 0);
+		char* a = recvdata2;
+		//printf("  [>] Computer name: ");
+		for (int i = 40; i < size2; i++) {
+			if (a[i + 1] == 9 && a[i + 2] == 0 && a[i + 3] == -1 && a[i + 4] == -1)
+			{
+				break;
+			}
+			if (a[i] == 0 && a[i + 1] == 0 && a[i + 2] == 0 && a[i + 3] == 7)
+			{
+				printf("\n  [>] IP Address: ");
+			}
+			if (a[i] != 0)
+			{
+				printf("%c", a[i]);
+			}
+
+		}
+		memset(recvdata1, 0, SERVER_MSG_SIZE);
+		memset(recvdata2, 0, SERVER_MSG_SIZE);
+		//mu.unlock();  //解除锁定
+		LeaveCriticalSection(&Critical);
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
 	}
 
 	closesocket(clientSocket);
@@ -150,26 +257,29 @@ int main(int argc, char* argv[])
 	{
 		usage();
 		return -1;
-	}else if (strcmp(argv[1], "-c") == 0)
+	}
+	else if (strcmp(argv[1], "-c") == 0)
 	{
 		printf("Author: Uknow\n");
 		printf("Github: https://github.com/uknowsec/OXID_Find\n");
-		uint32_t ip;
-		uint32_t mask;
-		uint32_t first_ip;
-		if (cidr_to_ip_and_mask(argv[2], &ip, &mask) == -1) {
-			printf("error in cidr call.\n");
-			exit(1);
-		}
+		spawnThreads(argv[2]);
+		///	uint32_t ip;
+		//	uint32_t mask;
+		//	uint32_t first_ip;
+			//if (cidr_to_ip_and_mask(argv[2], &ip, &mask) == -1) {
+			//	printf("error in cidr call.\n");
+			//	exit(1);
+		//	}
 
-		first_ip = ip & mask;
-		uint32_t final_ip = first_ip | ~mask;
-		for (uint32_t i = first_ip; i <= final_ip; i++) {
-			oxid(INTtoIP(i).c_str());
-		}
+			//first_ip = ip & mask;
+			//uint32_t final_ip = first_ip | ~mask;
+		//	for (uint32_t i = first_ip; i <= final_ip; i++) {
+				//spawnThreads(20, INTtoIP(i).c_str());
+				//oxid(INTtoIP(i).c_str());
+			//}
 	}
 	else if (strcmp(argv[1], "-i") == 0)
-	{ 
+	{
 		printf("Author: Uknow\n");
 		printf("Github: https://github.com/uknowsec/OXID_Find\n");
 		oxid(argv[2]);
